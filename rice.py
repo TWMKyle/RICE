@@ -137,17 +137,18 @@ else:
                     # 💡 DISPLAY LABEL UPGRADE: Now reads e.g., "Dona Maria - Jasmine (RICE-JAS-01) [Sack]"
                     inventory_df["Display_Label"] = inventory_df["Brand"] + " - " + inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
                     product_selection = st.selectbox("Select Rice Item to Sell", options=inventory_df["Display_Label"].unique())
-                    
                     # Extract the true targeted matching entry row parameters
                     selected_idx = inventory_df[inventory_df["Display_Label"] == product_selection].index
-                    selected_row = inventory_df.loc[selected_idx].iloc
+                    
+                    # 💡 FIX: Access the row data directly using the index array, or add .iloc[0]
+                    selected_row = inventory_df.loc[selected_idx].iloc[0]
                     
                     current_stock = int(selected_row["Stock_Count"])
                     retail_price = float(selected_row["Retail_Price"])
                     target_sku = selected_row["SKU"]
                     target_brand = selected_row["Brand"]
                     target_variety = selected_row["Rice_Variety"]
-                    target_packaging = str(selected_row["Packaging"]).strip()
+                    target_packaging = str(selected_row["Packaging"]).strip(
                     
                     st.caption(f"💡 Current Live Stock Level: **{current_stock}** {target_packaging.lower()}(s) left | Unit Retail Price: **₱{retail_price:,.2f}**")
                     
