@@ -10,7 +10,7 @@ st.set_page_config(
     page_icon="🌾", 
     layout="wide"
 )
-
+RICE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pY_t90mBbeZ6ujZnw-fO9MhnM0f8QfqURDYEUDr1y4Q/edit?gid=0#gid=0"
 
 
 # Persistent Memory Initialization
