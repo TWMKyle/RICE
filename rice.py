@@ -120,8 +120,10 @@ else:
     except Exception as e:
         st.error(f"❌ Database load failure. Verify spreadsheet tabs and column names. Details: {e}")
         st.stop()
+
+
         # ==========================================
-    # TAB 1: SALES TRANSACTIONS (DYNAMIC SACK LIMITS)
+    # TAB 1: SALES TRANSACTIONS (HIDE OUT OF STOCK ITEMS)
     # ==========================================
     with tab1:
         st.subheader("🛒 Register New Point-of-Sale Transaction")
@@ -132,119 +134,125 @@ else:
             if inventory_df.empty:
                 st.info("No items available in inventory to sell.")
             else:
-                # Combine descriptive labels to isolate our master wholesale entries
+                # 1. Generate descriptive display labels for ALL items in memory
                 inventory_df["Display_Label"] = inventory_df["Brand"] + " - " + inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
-                product_selection = st.selectbox("Select Master Rice Inventory Item", options=inventory_df["Display_Label"].unique())
                 
-                # Extract single row mapping indices
-                selected_idx = inventory_df[inventory_df["Display_Label"] == product_selection].index
-                selected_row = inventory_df.loc[selected_idx].squeeze()
+                # 💡 FIX: Filter out any items where the stock count has hit 0 or lower before building the options list
+                available_items_df = inventory_df[inventory_df["Stock_Count"] > 0]
                 
-                # Handle metrics attributes parsing safely
-                current_stock_sacks = float(selected_row["Stock_Count"])
-                sack_weight_kg = float(selected_row["Bag_Weight_KG"])
-                retail_price_per_sack = float(selected_row["Retail_Price"])
-                
-                target_sku = str(selected_row["SKU"])
-                target_brand = str(selected_row["Brand"])
-                target_variety = str(selected_row["Rice_Variety"])
-                target_packaging = str(selected_row["Packaging"])
-                
-                # Calculate live weight volumes remaining in stock
-                total_available_kg = current_stock_sacks * sack_weight_kg
-                
-                st.caption(f"💡 Current Live Stock Level: **{current_stock_sacks:,.2f}** {target_packaging}(s) remaining (Total available volume: **{total_available_kg:,.1f} kg**)")
-                st.divider()
-                
-                # STEP 1: USER CHOOSE SALES OPERATION TYPE
-                sale_type = st.radio(
-                    "Select Operational Transaction Type",
-                    options=["Sell Whole Unit / Sack", "Repack into Smaller Bags (1kg - Custom)"],
-                    horizontal=True
-                )
-                
-                st.write("")
-                col_input_1, col_input_2 = st.columns(2)
-                
-                if sale_type == "Sell Whole Unit / Sack":
-                    with col_input_1:
-                        qty_units_sold = st.number_input(f"Quantity of Whole {sack_weight_kg:g}kg {target_packaging}s Sold", min_value=1, value=1, step=1)
-                    
-                    # Math formulas for standard retail
-                    total_weight_sold_kg = float(qty_units_sold * sack_weight_kg)
-                    sacks_to_deduct = float(qty_units_sold)
-                    total_sale_amount = qty_units_sold * retail_price_per_sack
-                    transaction_variety_label = target_variety
-                    transaction_packaging_label = target_packaging
-                    
+                if available_items_df.empty:
+                    st.warning("⚠️ Out of Stock: There are currently zero units available in the warehouse registry.")
                 else:
-                    # "Repack into Smaller Bags" Mode
-                    with col_input_1:
-                        # 💡 DYNAMIC MAXIMUM GUARDRAIL: Sets the ceiling limit dynamically based on the SKU configuration (Sack Weight - 1)
-                        # If a sack is 10kg, max repack is 9kg. If it's 50kg, max repack is 49kg.
-                        max_repack_weight = int(sack_weight_kg - 1) if sack_weight_kg > 1 else 1
+                    # Provide the selectbox only with items that are currently in stock
+                    product_selection = st.selectbox("Select Master Rice Inventory Item", options=available_items_df["Display_Label"].unique())
+                    
+                    # Extract single row mapping indices using the filtered dataset
+                    selected_idx = available_items_df[available_items_df["Display_Label"] == product_selection].index
+                    selected_row = available_items_df.loc[selected_idx].squeeze()
+                    
+                    # Handle metrics attributes parsing safely
+                    current_stock_sacks = float(selected_row["Stock_Count"])
+                    sack_weight_kg = float(selected_row["Bag_Weight_KG"])
+                    retail_price_per_sack = float(selected_row["Retail_Price"])
+                    
+                    target_sku = str(selected_row["SKU"])
+                    target_brand = str(selected_row["Brand"])
+                    target_variety = str(selected_row["Rice_Variety"])
+                    target_packaging = str(selected_row["Packaging"])
+                    
+                    # Calculate live weight volumes remaining in stock
+                    total_available_kg = current_stock_sacks * sack_weight_kg
+                    
+                    st.caption(f"💡 Current Live Stock Level: **{current_stock_sacks:,.2f}** {target_packaging}(s) remaining (Total available volume: **{total_available_kg:,.1f} kg**)")
+                    st.divider()
+                    
+                    # STEP 1: USER CHOOSE SALES OPERATION TYPE
+                    sale_type = st.radio(
+                        "Select Operational Transaction Type",
+                        options=["Sell Whole Unit / Sack", "Repack into Smaller Bags (1kg - Custom)"],
+                        horizontal=True
+                    )
+                    
+                    st.write("")
+                    col_input_1, col_input_2 = st.columns(2)
+                    
+                    if sale_type == "Sell Whole Unit / Sack":
+                        with col_input_1:
+                            qty_units_sold = st.number_input(f"Quantity of Whole {sack_weight_kg:g}kg {target_packaging}s Sold", min_value=1, max_value=int(current_stock_sacks) if current_stock_sacks >= 1 else 1, value=1, step=1)
                         
-                        repack_weight_per_bag = st.number_input(
-                            f"Specify Custom Bag Weight (KG) [Limit: 1 - {max_repack_weight}kg]", 
-                            min_value=1, 
-                            max_value=max_repack_weight, 
-                            value=1, 
-                            step=1,
-                            help=f"Based on this SKU's configuration ({sack_weight_kg:g}kg), you can enter any repack weight up to {max_repack_weight}kg."
-                        )
-                    with col_input_2:
-                        qty_units_sold = st.number_input(f"Quantity of {repack_weight_per_bag}kg Small Bags Sold", min_value=1, value=1, step=1)
-                    
-                    # SUBDIVISION CONVERSION LOGIC
-                    total_weight_sold_kg = float(repack_weight_per_bag * qty_units_sold)
-                    sacks_to_deduct = total_weight_sold_kg / sack_weight_kg
-                    
-                    # Calculate retail proportional prices based strictly on weight distributions
-                    price_per_repacked_bag = (repack_weight_per_bag / sack_weight_kg) * retail_price_per_sack
-                    total_sale_amount = qty_units_sold * price_per_repacked_bag
-                    transaction_variety_label = f"{target_variety} (Repacked {repack_weight_per_bag}kg)"
-                    transaction_packaging_label = "Small Bag"
-                
-                # 🖥️ Live Transaction Summary Preview
-                st.info(f"💵 **Transaction Preview:** Total Weight Moving: `{total_weight_sold_kg:,.1f} kg` | **Total Combined Price Due: ₱{total_sale_amount:,.2f}**")
-                
-                # Global Action button
-                if st.button("Commit Transaction Log", type="primary"):
-                    if total_available_kg < total_weight_sold_kg:
-                        st.error(f"❌ Transaction Terminated! Insufficient volume. You are attempting to sell {total_weight_sold_kg}kg but only {total_available_kg}kg remains.")
+                        # Math formulas for standard retail
+                        total_weight_sold_kg = float(qty_units_sold * sack_weight_kg)
+                        sacks_to_deduct = float(qty_units_sold)
+                        total_sale_amount = qty_units_sold * retail_price_per_sack
+                        transaction_variety_label = target_variety
+                        transaction_packaging_label = target_packaging
+                        
                     else:
-                        with st.spinner("Compiling and syncing changes securely with Google Cloud..."):
-                            # 1. Map operations data values dynamically into your sales log sheet dataframe
-                            new_sale_row = pd.DataFrame([{
-                                "Transaction_ID": str(uuid.uuid4())[:8].upper(),
-                                "Date_Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                "SKU": target_sku,
-                                "Brand": target_brand,
-                                "Rice_Variety": transaction_variety_label,
-                                "Packaging": transaction_packaging_label,
-                                "Quantity_Bags": int(qty_units_sold),
-                                "Price_Per_Bag": float(total_sale_amount / qty_units_sold),
-                                "Total_Amount": float(total_sale_amount),
-                                "Encoder": active_user
-                            }])
-                            
-                            # 2. FRACTIONAL SUBTRACTION: Strip precise weight fraction from the inventory manifest array
-                            inventory_df.loc[selected_idx, "Stock_Count"] = current_stock_sacks - sacks_to_deduct
-                            inventory_df["Last_Updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                            
-                            # Clean up UI descriptors
-                            if "Display_Label" in inventory_df.columns:
-                                inventory_df = inventory_df.drop(columns=["Display_Label"])
-                            
-                            # 3. Synchronize ledger modifications upstream with Google Sheets API
-                            updated_sales_df = pd.concat([sales_df, new_sale_row], ignore_index=True)
-                            
-                            conn.update(data=updated_sales_df, worksheet="Sales_Transactions")
-                            conn.update(data=inventory_df, worksheet="Rice_Inventory")
-                            
-                            st.success(f"🎉 Success! Dispatched transaction seamlessly. Deducted **{sacks_to_deduct:.2f}** {target_packaging.lower()}(s) from `{target_brand}` stock.")
-                            st.rerun()
-
+                        # "Repack into Smaller Bags" Mode
+                        with col_input_1:
+                            max_repack_weight = int(sack_weight_kg - 1) if sack_weight_kg > 1 else 1
+                            repack_weight_per_bag = st.number_input(
+                                f"Specify Custom Bag Weight (KG) [Limit: 1 - {max_repack_weight}kg]", 
+                                min_value=1, 
+                                max_value=max_repack_weight, 
+                                value=1, 
+                                step=1,
+                                help=f"Based on this SKU's configuration ({sack_weight_kg:g}kg), you can enter any repack weight up to {max_repack_weight}kg."
+                            )
+                        with col_input_2:
+                            # Restrict repack limits dynamically to the exact fractional weight left over in warehouse
+                            max_bags_allowed = int(total_available_kg // repack_weight_per_bag)
+                            qty_units_sold = st.number_input(f"Quantity of {repack_weight_per_bag}kg Small Bags Sold", min_value=1, max_value=max_bags_allowed if max_bags_allowed > 0 else 1, value=1, step=1)
+                        
+                        # SUBDIVISION CONVERSION LOGIC
+                        total_weight_sold_kg = float(repack_weight_per_bag * qty_units_sold)
+                        sacks_to_deduct = total_weight_sold_kg / sack_weight_kg
+                        
+                        # Calculate retail proportional prices based strictly on weight distributions
+                        price_per_repacked_bag = (repack_weight_per_bag / sack_weight_kg) * retail_price_per_sack
+                        total_sale_amount = qty_units_sold * price_per_repacked_bag
+                        transaction_variety_label = f"{target_variety} (Repacked {repack_weight_per_bag}kg)"
+                        transaction_packaging_label = "Small Bag"
+                    
+                    # 🖥️ Live Transaction Summary Preview
+                    st.info(f"💵 **Transaction Preview:** Total Weight Moving: `{total_weight_sold_kg:,.1f} kg` | **Total Combined Price Due: ₱{total_sale_amount:,.2f}**")
+                    
+                    # Global Action button
+                    if st.button("Commit Transaction Log", type="primary"):
+                        if total_available_kg < total_weight_sold_kg:
+                            st.error(f"❌ Transaction Terminated! Insufficient volume. You are attempting to sell {total_weight_sold_kg}kg but only {total_available_kg}kg remains.")
+                        else:
+                            with st.spinner("Compiling and syncing changes securely with Google Cloud..."):
+                                # 1. Map operations data values dynamically into your sales log sheet dataframe
+                                new_sale_row = pd.DataFrame([{
+                                    "Transaction_ID": str(uuid.uuid4())[:8].upper(),
+                                    "Date_Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    "SKU": target_sku,
+                                    "Brand": target_brand,
+                                    "Rice_Variety": transaction_variety_label,
+                                    "Packaging": transaction_packaging_label,
+                                    "Quantity_Bags": int(qty_units_sold),
+                                    "Price_Per_Bag": float(total_sale_amount / qty_units_sold),
+                                    "Total_Amount": float(total_sale_amount),
+                                    "Encoder": active_user
+                                }])
+                                
+                                # 2. FRACTIONAL SUBTRACTION: Strip precise weight fraction from the inventory manifest array
+                                inventory_df.loc[selected_idx, "Stock_Count"] = current_stock_sacks - sacks_to_deduct
+                                inventory_df["Last_Updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                                
+                                # Clean up UI descriptors
+                                if "Display_Label" in inventory_df.columns:
+                                    inventory_df = inventory_df.drop(columns=["Display_Label"])
+                                
+                                # 3. Synchronize ledger modifications upstream with Google Sheets API
+                                updated_sales_df = pd.concat([sales_df, new_sale_row], ignore_index=True)
+                                
+                                conn.update(data=updated_sales_df, worksheet="Sales_Transactions")
+                                conn.update(data=inventory_df, worksheet="Rice_Inventory")
+                                
+                                st.success(f"🎉 Success! Dispatched transaction seamlessly. Deducted **{sacks_to_deduct:.2f}** {target_packaging.lower()}(s) from `{target_brand}` stock.")
+                                st.rerun()
 
     
     # ==========================================
