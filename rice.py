@@ -15,20 +15,16 @@ st.markdown("Monitor stock levels, calculate total valuation, and override item 
 st.divider()
 
 # --- 2. DEEP CONNECTION TESTING PIPELINE ---
+# --- 2. CONNECT TO GOOGLE SHEETS PIPELINE ---
 try:
-    # Diagnostic Check 1: Ensure secrets exist in your file system
-    if "connections" not in st.secrets or "rice_sheets" not in st.secrets["connections"]:
-        st.error("❌ Configuration Error: Could not find the `[connections.rice_sheets]` section inside your `.streamlit/secrets.toml` file.")
-        st.info("💡 Open your `.streamlit/secrets.toml` file and verify that the block starts exactly with `[connections.rice_sheets]`.")
-        st.stop()
-        
-    # Attempt connecting with the sheets configuration block
-    conn = st.connection("rice_sheets", type=GSheetsConnection)
+    # 💡 REUSE your original working connection name ("gsheets")
+    conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Read the designated worksheet tab from the cloud workbook
-    master_df = conn.read(worksheet="Rice_Inventory", ttl=0)
+    # 💡 PASS your new spreadsheet URL directly into the read function here:
+    target_url = "https://google.com"
+    master_df = conn.read(spreadsheet=target_url, worksheet="Rice_Inventory", ttl=0)
     
-    # Assert expected data frame parameters are valid
+    # Assert expected columns
     required_cols = ["SKU", "Rice_Variety", "Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price", "Last_Updated"]
     missing_cols = [col for col in required_cols if col not in master_df.columns]
     
@@ -45,8 +41,9 @@ try:
 except Exception as connection_error:
     st.error("❌ High-Level Pipeline Failure!")
     st.write("### 🔍 Technical Debug Details:")
-    st.exception(connection_error)  # This outputs the true, unredacted reason for the failure
+    st.exception(connection_error)
     st.stop()
+
 
 # --- 3. EXECUTIVE METRICS DASHBOARD ---
 total_bags = int(master_df["Stock_Count"].sum())
