@@ -122,7 +122,7 @@ else:
         st.stop()
 
         # ==========================================
-    # TAB 1: SALES TRANSACTIONS (DYNAMIC SACK/BAG)
+    # TAB 1: SALES TRANSACTIONS (WITH BRAND FIELD)
     # ==========================================
     with tab1:
         st.subheader("🛒 Register New Point-of-Sale Transaction")
@@ -134,25 +134,23 @@ else:
                 st.info("No items available in inventory to sell.")
             else:
                 with st.form("pos_sale_entry_form", clear_on_submit=True):
-                    # Combine fields so handlers know exactly what size item they are touching
-                    inventory_df["Display_Label"] = inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
+                    # 💡 DISPLAY LABEL UPGRADE: Now reads e.g., "Dona Maria - Jasmine (RICE-JAS-01) [Sack]"
+                    inventory_df["Display_Label"] = inventory_df["Brand"] + " - " + inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
                     product_selection = st.selectbox("Select Rice Item to Sell", options=inventory_df["Display_Label"].unique())
                     
                     # Extract the true targeted matching entry row parameters
                     selected_idx = inventory_df[inventory_df["Display_Label"] == product_selection].index
-                    selected_row = inventory_df.loc[selected_idx].iloc[0]
+                    selected_row = inventory_df.loc[selected_idx].iloc
                     
                     current_stock = int(selected_row["Stock_Count"])
                     retail_price = float(selected_row["Retail_Price"])
                     target_sku = selected_row["SKU"]
+                    target_brand = selected_row["Brand"]
                     target_variety = selected_row["Rice_Variety"]
-                    
-                    # 💡 DYNAMIC INPUT LABEL: Automatically catches whether it is a "Bag" or a "Sack"
                     target_packaging = str(selected_row["Packaging"]).strip()
                     
                     st.caption(f"💡 Current Live Stock Level: **{current_stock}** {target_packaging.lower()}(s) left | Unit Retail Price: **₱{retail_price:,.2f}**")
                     
-                    # Form input fields dynamically render "Quantity of Bags Sold" or "Quantity of Sacks Sold"
                     qty_to_sell = st.number_input(
                         f"Quantity of {target_packaging}s Sold", 
                         min_value=1, 
@@ -166,13 +164,14 @@ else:
                         if current_stock < qty_to_sell:
                             st.error(f"❌ Out of stock! Transaction blocked due to insufficient {target_packaging.lower()} quantities.")
                         else:
-                            # 1. Map properties array into new sales log line
+                            # 1. Map properties array into new sales log line with Brand
                             new_sale_row = pd.DataFrame([{
                                 "Transaction_ID": str(uuid.uuid4())[:8].upper(),
                                 "Date_Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 "SKU": target_sku,
+                                "Brand": target_brand,
                                 "Rice_Variety": target_variety,
-                                "Packaging": target_packaging,  # Safely records "Bag" or "Sack" in the log sheet
+                                "Packaging": target_packaging,
                                 "Quantity_Bags": int(qty_to_sell),
                                 "Price_Per_Bag": float(retail_price),
                                 "Total_Amount": float(qty_to_sell * retail_price),
@@ -192,8 +191,9 @@ else:
                             conn.update(data=updated_sales_df, worksheet="Sales_Transactions")
                             conn.update(data=inventory_df, worksheet="Rice_Inventory")
                             
-                            st.success(f"🎉 Sale successfully logged! Subtracted **{qty_to_sell}** {target_packaging.lower()}(s) from {target_variety} inventory.")
+                            st.success(f"🎉 Sale successfully logged! Subtracted **{qty_to_sell}** {target_packaging.lower()}(s) from {target_brand} {target_variety} inventory.")
                             st.rerun()
+
 
 
     # ==========================================
@@ -225,13 +225,12 @@ else:
         else:
             st.info("No recorded transactions found inside your spreadsheet history file yet.")
 
-    # ==========================================
-    # TAB 3: PRODUCT UPDATES (PREVIOUS PROJECT CODE)
+        # ==========================================
+    # TAB 3: PRODUCT UPDATES (WITH BRAND CONFIG)
     # ==========================================
     with tab3:
         st.subheader("📋 Master Stock Manifest Control")
         
-        # Strip structural display label fields if present from Tab 1 operations
         if "Display_Label" in inventory_df.columns:
             inventory_df = inventory_df.drop(columns=["Display_Label"])
 
@@ -253,12 +252,11 @@ else:
 
         st.divider()
 
-        left_pane, right_pane = st.columns([3, 1])
+        left_pane, right_pane = st.columns()
         with left_pane:
-            st.markdown('<span style="color: white; font-size: 0.85rem;">✏️ Modify inventory cells below. Changes must be explicitly saved to overwrite the ledger.</span>', unsafe_allow_html=True)
+            st.markdown('<span style="color: white; font-size: 0.85rem;">✏Header text modifiers. Changes must be explicitly saved to overwrite the ledger.</span>', unsafe_allow_html=True)
             
-            # Setup list tracking array strings for role isolation verification
-            required_cols = ["SKU", "Rice_Variety", "Packaging", "Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price", "Last_Updated"]
+            required_cols = ["Brand", "SKU", "Rice_Variety", "Packaging", "Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price", "Last_Updated"]
             disabled_columns = ["Last_Updated"]
             if is_read_only:
                 st.error("⚠️ Read-Only Profile: Grid modifications are locked out.")
@@ -269,6 +267,8 @@ else:
                 num_rows="viewer" if is_read_only else "dynamic", 
                 use_container_width=True,
                 column_config={
+                    # 💡 NEW BRAND COLUMN DEFINED HERE:
+                    "Brand": st.column_config.TextColumn("Product Brand", required=True, disabled=("Brand" in disabled_columns)),
                     "SKU": st.column_config.TextColumn("SKU Code", required=True, disabled=("SKU" in disabled_columns)),
                     "Rice_Variety": st.column_config.SelectboxColumn("Rice Variety", options=dropdown_choices, required=True, disabled=("Rice_Variety" in disabled_columns)),
                     "Packaging": st.column_config.SelectboxColumn("Packaging", options=["Bag", "Sack"], required=True, disabled=("Packaging" in disabled_columns)),
@@ -284,22 +284,12 @@ else:
                 if st.button("Save & Sync Stock Changes", type="primary"):
                     with st.spinner("Writing transactions securely to cloud registry..."):
                         # Reassert string datatypes on edited matrix data lines
+                        edited_df["Brand"] = edited_df["Brand"].fillna("Generic").astype(str).str.strip()
                         edited_df["SKU"] = edited_df["SKU"].fillna("").astype(str).str.strip()
                         edited_df["Rice_Variety"] = edited_df["Rice_Variety"].fillna("Jasmine").astype(str).str.strip()
                         edited_df["Packaging"] = edited_df["Packaging"].fillna("Bag").astype(str).str.strip()
                         edited_df["Last_Updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                         
-                        conn.update(spreadsheet=RICE_SHEET_URL, data=edited_df, worksheet="Rice_Inventory")
+                        conn.update(data=edited_df, worksheet="Rice_Inventory")
                         st.success("🎉 Inventory dashboard synchronized perfectly with cloud storage!")
                         st.rerun()
-
-        with right_pane:
-            st.subheader("⚠️ Alerts")
-            low_stock_threshold = 10
-            low_stock_df = inventory_df[inventory_df["Stock_Count"] <= low_stock_threshold]
-            
-            if not low_stock_df.empty:
-                for _, row in low_stock_df.iterrows():
-                    st.error(f"**{row['Rice_Variety']} ({row['SKU']})**\n\nOnly **{int(row['Stock_Count'])}** {row['Packaging'].lower()}(s) remaining!")
-            else:
-                st.success("✅ Stock parameters clear.")
