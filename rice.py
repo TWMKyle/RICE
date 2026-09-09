@@ -120,9 +120,8 @@ else:
     except Exception as e:
         st.error(f"❌ Database load failure. Verify spreadsheet tabs and column names. Details: {e}")
         st.stop()
-
         # ==========================================
-    # TAB 1: SALES TRANSACTIONS (LIVE REACTIVE CALCULATOR)
+    # TAB 1: SALES TRANSACTIONS (DYNAMIC SACK LIMITS)
     # ==========================================
     with tab1:
         st.subheader("🛒 Register New Point-of-Sale Transaction")
@@ -133,7 +132,6 @@ else:
             if inventory_df.empty:
                 st.info("No items available in inventory to sell.")
             else:
-                # 💡 FIX 1: We no longer wrap the input fields inside st.form!
                 # Combine descriptive labels to isolate our master wholesale entries
                 inventory_df["Display_Label"] = inventory_df["Brand"] + " - " + inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
                 product_selection = st.selectbox("Select Master Rice Inventory Item", options=inventory_df["Display_Label"].unique())
@@ -159,10 +157,9 @@ else:
                 st.divider()
                 
                 # STEP 1: USER CHOOSE SALES OPERATION TYPE
-                # 💡 Because this is outside a form, changing this radio option will now trigger an instant recalculation!
                 sale_type = st.radio(
                     "Select Operational Transaction Type",
-                    options=["Sell Whole Unit / Sack", "Repack into Smaller Bags (1kg - 24kg)"],
+                    options=["Sell Whole Unit / Sack", "Repack into Smaller Bags (1kg - Custom)"],
                     horizontal=True
                 )
                 
@@ -171,7 +168,7 @@ else:
                 
                 if sale_type == "Sell Whole Unit / Sack":
                     with col_input_1:
-                        qty_units_sold = st.number_input(f"Quantity of Whole {target_packaging}s Sold", min_value=1, value=1, step=1)
+                        qty_units_sold = st.number_input(f"Quantity of Whole {sack_weight_kg:g}kg {target_packaging}s Sold", min_value=1, value=1, step=1)
                     
                     # Math formulas for standard retail
                     total_weight_sold_kg = float(qty_units_sold * sack_weight_kg)
@@ -183,13 +180,17 @@ else:
                 else:
                     # "Repack into Smaller Bags" Mode
                     with col_input_1:
+                        # 💡 DYNAMIC MAXIMUM GUARDRAIL: Sets the ceiling limit dynamically based on the SKU configuration (Sack Weight - 1)
+                        # If a sack is 10kg, max repack is 9kg. If it's 50kg, max repack is 49kg.
                         max_repack_weight = int(sack_weight_kg - 1) if sack_weight_kg > 1 else 1
+                        
                         repack_weight_per_bag = st.number_input(
-                            "Specify Custom Bag Weight (KG)", 
+                            f"Specify Custom Bag Weight (KG) [Limit: 1 - {max_repack_weight}kg]", 
                             min_value=1, 
                             max_value=max_repack_weight, 
                             value=1, 
-                            step=1
+                            step=1,
+                            help=f"Based on this SKU's configuration ({sack_weight_kg:g}kg), you can enter any repack weight up to {max_repack_weight}kg."
                         )
                     with col_input_2:
                         qty_units_sold = st.number_input(f"Quantity of {repack_weight_per_bag}kg Small Bags Sold", min_value=1, value=1, step=1)
@@ -205,10 +206,9 @@ else:
                     transaction_packaging_label = "Small Bag"
                 
                 # 🖥️ Live Transaction Summary Preview
-                # 💡 This notification will now change layout parameters instantly on every keystroke!
                 st.info(f"💵 **Transaction Preview:** Total Weight Moving: `{total_weight_sold_kg:,.1f} kg` | **Total Combined Price Due: ₱{total_sale_amount:,.2f}**")
                 
-                # 💡 FIX 2: Swapped out st.form_submit_button for a primary global action button
+                # Global Action button
                 if st.button("Commit Transaction Log", type="primary"):
                     if total_available_kg < total_weight_sold_kg:
                         st.error(f"❌ Transaction Terminated! Insufficient volume. You are attempting to sell {total_weight_sold_kg}kg but only {total_available_kg}kg remains.")
@@ -244,6 +244,7 @@ else:
                             
                             st.success(f"🎉 Success! Dispatched transaction seamlessly. Deducted **{sacks_to_deduct:.2f}** {target_packaging.lower()}(s) from `{target_brand}` stock.")
                             st.rerun()
+
 
     
     # ==========================================
