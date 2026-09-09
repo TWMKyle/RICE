@@ -20,6 +20,7 @@ try:
     # Fetch live spreadsheet matrix (ttl=0 avoids stale storage cache reads)
     master_df = conn.read(worksheet="Rice_Inventory", ttl=0)
 
+    # Clean currency text strings (strip out ₱, $, and commas) before making numeric evaluations
     for money_col in ["Cost_Price", "Retail_Price"]:
         if money_col in master_df.columns:
             master_df[money_col] = (
@@ -31,13 +32,22 @@ try:
                 .str.strip()
             )
     
-    # Standardize data types to fix the Streamlit type compatibility exception
+    # 🌟 FIX 1: Explicitly normalize string text columns to remove hidden white-spaces and NaN blocks
+    master_df["SKU"] = master_df["SKU"].fillna("").astype(str).str.strip()
+    master_df["Rice_Variety"] = master_df["Rice_Variety"].fillna("Jasmine").astype(str).str.strip()
+    master_df["Last_Updated"] = master_df["Last_Updated"].fillna("").astype(str).str.strip()
+    
+    # Standardize numeric data types cleanly to match data editor schemas
     master_df["Bag_Weight_KG"] = pd.to_numeric(master_df["Bag_Weight_KG"], errors='coerce').fillna(0).astype(int)
     master_df["Stock_Count"] = pd.to_numeric(master_df["Stock_Count"], errors='coerce').fillna(0).astype(int)
     master_df["Cost_Price"] = pd.to_numeric(master_df["Cost_Price"], errors='coerce').fillna(0.0).astype(float)
     master_df["Retail_Price"] = pd.to_numeric(master_df["Retail_Price"], errors='coerce').fillna(0.0).astype(float)
 
-    # 💡 REMOVED THE OLD FOR LOOP THAT WAS RESETTING THE DATATYPES HERE
+    # 🌟 FIX 2: Dynamically pull unique choices directly from your Google Sheet cells
+    # This prevents crashes from minor typos while keeping your target options available
+    baseline_options = {"Jasmine", "Sinandomeng", "Basmati", "Brown Rice", "Sticky Rice"}
+    found_options = set(master_df["Rice_Variety"].unique())
+    dropdown_choices = list(baseline_options.union(found_options))
 
 except Exception as e:
     st.error(f"❌ Google Sheets Connection failed. Ensure the 'Rice_Inventory' tab exists with the correct columns. Trace: {e}")
@@ -76,7 +86,8 @@ with left_pane:
         use_container_width=True,
         column_config={
             "SKU": st.column_config.TextColumn("SKU Code", required=True),
-            "Rice_Variety": st.column_config.SelectboxColumn("Rice Variety", options=["Jasmine", "Sinandomeng", "Basmati", "Brown Rice", "Sticky Rice"]),
+            # 🌟 FIX 3: Pass our combined, dynamic dropdown values array list here
+            "Rice_Variety": st.column_config.SelectboxColumn("Rice Variety", options=dropdown_choices, required=True),
             "Bag_Weight_KG": st.column_config.NumberColumn("Weight (KG)", min_value=1, format="%d kg"),
             "Stock_Count": st.column_config.NumberColumn("Bags Count", min_value=0, format="%d"),
             "Cost_Price": st.column_config.NumberColumn("Cost per Bag", min_value=0.0, format="₱%.2f"),
