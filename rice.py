@@ -20,27 +20,26 @@ if "logged_in" not in st.session_state:
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
 
-# --- 2. DYNAMIC REGISTRY PIPELINE LOAD ---
 try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    users_df = conn.read(spreadsheet=RICE_SHEET_URL, worksheet="Users", ttl=0)
-    
-    # 💡 FIX: Clean and standardize the column headers themselves to get rid of hidden spaces/caps!
-    users_df.columns = [str(col).strip().lower() for col in users_df.columns]
-    
-    # Verify the cleaned headers match what we expect
-    for col in ["uz", "pc", "auth"]:
-        if col in users_df.columns:
-            users_df[col] = users_df[col].astype(str).str.strip()
-        else:
-            st.error(f"❌ Structural database error. Missing column `{col}` from your Users worksheet.")
-            st.info(f"📋 What the code actually sees in your sheet row 1: {list(users_df.columns)}")
-            st.stop()
+        conn = st.connection("gsheets", type=GSheetsConnection)
         
-    USER_CREDENTIALS = dict(zip(users_df["uz"].str.upper(), users_df["pc"]))
-except Exception as e:
-    st.error(f"❌ User registry failure. Ensure a worksheet tab named 'Users' exists with headers `uz`, `pc`, `auth`. Error: {e}")
-    st.stop()
+        # Read the specialized user credential sheet (ttl=0 ensures live permission changes sync instantly)
+        users_df = conn.read(worksheet="Users", ttl=0)
+        
+        # Standardize security column arrays (strip trailing/leading whitespace blocks)
+        for col in ["uz", "pc", "auth"]:
+            if col in users_df.columns:
+                users_df[col] = users_df[col].astype(str).str.strip()
+            else:
+                st.error(f"❌ Target column `{col}` was missing from your Users worksheet header row. Detected fields: {list(users_df.columns)}")
+                st.stop()
+        
+        # Build live credentials bank mapping dictionary (Username: Passcode)
+        USER_CREDENTIALS = dict(zip(users_df["uz"].str.upper(), users_df["pc"]))
+        
+    except Exception as registry_error:
+        st.error(f"❌ User database pipeline offline. Ensure your Google Sheet has a 'Users' tab with headers: uz, pc, auth. Details: {registry_error}")
+        st.stop()
 
 # --- 3. SCENARIO A: THE SECURE LOGIN GATE ---
 if not st.session_state.logged_in:
