@@ -20,7 +20,7 @@ if "logged_in" not in st.session_state:
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
 
-try:
+    try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         
         # Read the specialized user credential sheet (ttl=0 ensures live permission changes sync instantly)
