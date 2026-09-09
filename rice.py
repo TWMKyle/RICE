@@ -11,8 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 💡 Shared Cloud Spreadsheet Link (Remember to replace this with your real link!)
-RICE_SHEET_URL = "https://google.com"
+
 
 # Persistent Memory Initialization
 if "logged_in" not in st.session_state:
@@ -20,26 +19,30 @@ if "logged_in" not in st.session_state:
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
 
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        
-        # Read the specialized user credential sheet (ttl=0 ensures live permission changes sync instantly)
-        users_df = conn.read(worksheet="Users", ttl=0)
-        
-        # Standardize security column arrays (strip trailing/leading whitespace blocks)
-        for col in ["uz", "pc", "auth"]:
-            if col in users_df.columns:
-                users_df[col] = users_df[col].astype(str).str.strip()
-            else:
-                st.error(f"❌ Target column `{col}` was missing from your Users worksheet header row. Detected fields: {list(users_df.columns)}")
-                st.stop()
-        
-        # Build live credentials bank mapping dictionary (Username: Passcode)
-        USER_CREDENTIALS = dict(zip(users_df["uz"].str.upper(), users_df["pc"]))
-        
-    except Exception as registry_error:
-        st.error(f"❌ User database pipeline offline. Ensure your Google Sheet has a 'Users' tab with headers: uz, pc, auth. Details: {registry_error}")
-        st.stop()
+# --- 2. DYNAMIC REGISTRY PIPELINE LOAD ---
+# 💡 FIX: Pre-define the dictionary as empty so it always exists in memory
+USER_CREDENTIALS = {}
+
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
+    # Read the specialized user credential sheet (ttl=0 ensures live permission changes sync instantly)
+    users_df = conn.read(worksheet="Users", ttl=0)
+    
+    # Standardize security column arrays (strip trailing/leading whitespace blocks)
+    for col in ["uz", "pc", "auth"]:
+        if col in users_df.columns:
+            users_df[col] = users_df[col].astype(str).str.strip()
+        else:
+            st.error(f"❌ Target column `{col}` was missing from your Users worksheet header row. Detected fields: {list(users_df.columns)}")
+            st.stop()
+    
+    # Build live credentials bank mapping dictionary (Username: Passcode)
+    USER_CREDENTIALS = dict(zip(users_df["uz"].str.upper(), users_df["pc"]))
+    
+except Exception as registry_error:
+    st.error(f"❌ User database pipeline offline. Ensure your Google Sheet has a 'Users' tab with headers: uz, pc, auth. Details: {registry_error}")
+    st.stop()
 
 # --- 3. SCENARIO A: THE SECURE LOGIN GATE ---
 if not st.session_state.logged_in:
