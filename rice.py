@@ -121,8 +121,8 @@ else:
         st.error(f"❌ Database load failure. Verify spreadsheet tabs and column names. Details: {e}")
         st.stop()
 
-    # ==========================================
-    # TAB 1: SALES TRANSACTIONS (DEDUCTS STOCK)
+        # ==========================================
+    # TAB 1: SALES TRANSACTIONS (DYNAMIC SACK/BAG)
     # ==========================================
     with tab1:
         st.subheader("🛒 Register New Point-of-Sale Transaction")
@@ -134,29 +134,37 @@ else:
                 st.info("No items available in inventory to sell.")
             else:
                 with st.form("pos_sale_entry_form", clear_on_submit=True):
-                    # Display Description combo string to avoid bag vs sack sizing confusion
+                    # Combine fields so handlers know exactly what size item they are touching
                     inventory_df["Display_Label"] = inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
                     product_selection = st.selectbox("Select Rice Item to Sell", options=inventory_df["Display_Label"].unique())
                     
                     # Extract the true targeted matching entry row parameters
-                    selected_idx = inventory_df[inventory_df["Display_Label"] == product_selection].index[0]
-                    selected_row = inventory_df.loc[selected_idx]
+                    selected_idx = inventory_df[inventory_df["Display_Label"] == product_selection].index
+                    selected_row = inventory_df.loc[selected_idx].iloc[0]
                     
                     current_stock = int(selected_row["Stock_Count"])
                     retail_price = float(selected_row["Retail_Price"])
                     target_sku = selected_row["SKU"]
                     target_variety = selected_row["Rice_Variety"]
-                    target_packaging = selected_row["Packaging"]
+                    
+                    # 💡 DYNAMIC INPUT LABEL: Automatically catches whether it is a "Bag" or a "Sack"
+                    target_packaging = str(selected_row["Packaging"]).strip()
                     
                     st.caption(f"💡 Current Live Stock Level: **{current_stock}** {target_packaging.lower()}(s) left | Unit Retail Price: **₱{retail_price:,.2f}**")
                     
-                    qty_to_sell = st.number_input(f"Quantity of {target_packaging}s Sold", min_value=1, max_value=int(current_stock) if current_stock > 0 else 1, step=1)
+                    # Form input fields dynamically render "Quantity of Bags Sold" or "Quantity of Sacks Sold"
+                    qty_to_sell = st.number_input(
+                        f"Quantity of {target_packaging}s Sold", 
+                        min_value=1, 
+                        max_value=int(current_stock) if current_stock > 0 else 1, 
+                        step=1
+                    )
                     
                     submit_sale = st.form_submit_button("Log Transaction", type="primary")
                     
                     if submit_sale:
                         if current_stock < qty_to_sell:
-                            st.error("❌ Out of stock! Transaction blocked due to insufficient unit quantities.")
+                            st.error(f"❌ Out of stock! Transaction blocked due to insufficient {target_packaging.lower()} quantities.")
                         else:
                             # 1. Map properties array into new sales log line
                             new_sale_row = pd.DataFrame([{
@@ -164,7 +172,7 @@ else:
                                 "Date_Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 "SKU": target_sku,
                                 "Rice_Variety": target_variety,
-                                "Packaging": target_packaging,
+                                "Packaging": target_packaging,  # Safely records "Bag" or "Sack" in the log sheet
                                 "Quantity_Bags": int(qty_to_sell),
                                 "Price_Per_Bag": float(retail_price),
                                 "Total_Amount": float(qty_to_sell * retail_price),
@@ -181,10 +189,11 @@ else:
                             # 3. Commit data updates back upstream concurrently
                             updated_sales_df = pd.concat([sales_df, new_sale_row], ignore_index=True)
                             
-                            conn.update(spreadsheet=RICE_SHEET_URL, data=updated_sales_df, worksheet="Sales_Transactions")
-                            conn.update(spreadsheet=RICE_SHEET_URL, data=inventory_df, worksheet="Rice_Inventory")
+                            conn.update(data=updated_sales_df, worksheet="Sales_Transactions")
+                            conn.update(data=inventory_df, worksheet="Rice_Inventory")
                             
                             st.success(f"🎉 Sale successfully logged! Subtracted **{qty_to_sell}** {target_packaging.lower()}(s) from {target_variety} inventory.")
+                            st.rerun()
 
 
     # ==========================================
