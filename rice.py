@@ -37,12 +37,8 @@ try:
     master_df["Cost_Price"] = pd.to_numeric(master_df["Cost_Price"], errors='coerce').fillna(0.0).astype(float)
     master_df["Retail_Price"] = pd.to_numeric(master_df["Retail_Price"], errors='coerce').fillna(0.0).astype(float)
 
+    # 💡 REMOVED THE OLD FOR LOOP THAT WAS RESETTING THE DATATYPES HERE
 
-    # Assert and clean up datatype properties for computing mathematics safely
-    numeric_cols = ["Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price"]
-    for col in numeric_cols:
-        master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
-        
 except Exception as e:
     st.error(f"❌ Google Sheets Connection failed. Ensure the 'Rice_Inventory' tab exists with the correct columns. Trace: {e}")
     st.stop()
