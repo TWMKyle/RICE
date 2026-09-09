@@ -253,7 +253,7 @@ else:
 
         st.divider()
 
-        left_pane, right_pane = st.columns()
+        left_pane, right_pane = st.columns(2)
         with left_pane:
             st.markdown('<span style="color: white; font-size: 0.85rem;">✏Header text modifiers. Changes must be explicitly saved to overwrite the ledger.</span>', unsafe_allow_html=True)
             
