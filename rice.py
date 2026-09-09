@@ -294,3 +294,23 @@ else:
                         conn.update(data=edited_df, worksheet="Rice_Inventory")
                         st.success("🎉 Inventory dashboard synchronized perfectly with cloud storage!")
                         st.rerun()
+
+        with right_pane:
+            st.subheader("⚠️ Alerts")
+            
+            # Use 'inventory_df' as it is the active data schema in this block
+            low_stock_threshold = 10
+            low_stock_df = inventory_df[inventory_df["Stock_Count"] <= low_stock_threshold]
+            
+            if not low_stock_df.empty:
+                for _, row in low_stock_df.iterrows():
+                    # Safely extract item configurations to present individual alerts
+                    item_variety = str(row["Rice_Variety"])
+                    item_sku = str(row["SKU"])
+                    item_packaging = str(row["Packaging"]).lower()
+                    item_qty = int(row["Stock_Count"])
+                    
+                    st.error(f"**{item_variety} ({item_sku})**\n\nOnly **{item_qty}** {item_packaging}(s) remaining!")
+            else:
+                st.success("✅ Stock parameters clear. All products sit safely above baseline thresholds.")
+
