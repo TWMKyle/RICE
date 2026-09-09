@@ -27,7 +27,7 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     # Read the specialized user credential sheet (ttl=0 ensures live permission changes sync instantly)
-    users_df = conn.read(worksheet="Users", ttl=0)
+    users_df = conn.read(worksheet="Users", ttl=2)
     
     # Standardize security column arrays (strip trailing/leading whitespace blocks)
     for col in ["uz", "pc", "auth"]:
