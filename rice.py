@@ -6,7 +6,7 @@ import uuid
 
 # --- 1. CONFIGURATION & PAGE INITIALIZATION ---
 st.set_page_config(
-    page_title="Rice Enterprise Core", 
+    page_title="Sto. Nino Rice Store", 
     page_icon="🌾", 
     layout="wide"
 )
@@ -46,13 +46,13 @@ except Exception as registry_error:
 
 # --- 3. SCENARIO A: THE SECURE LOGIN GATE ---
 if not st.session_state.logged_in:
-    st.title("🌾 Rice Corporate Security Terminal")
-    st.warning("🔒 This portal requires authentication to view, count, and manage production data rows.")
+    st.title("🌾 Sto. Nino Rice Store")
+    st.warning("🔒 This portal requires authentication to view, count, and manage production information.")
     
     with st.form("secure_rice_login_form"):
         username_input = st.text_input("Username").strip().upper()
         password_input = st.text_input("Password", type="password")
-        submit_login = st.form_submit_button("Authenticate Profile")
+        submit_login = st.form_submit_button("Login")
         
         if submit_login:
             if username_input in USER_CREDENTIALS and USER_CREDENTIALS[username_input] == password_input:
