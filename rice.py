@@ -123,7 +123,7 @@ else:
 
 
         # ==========================================
-    # TAB 1: SALES TRANSACTIONS (HIDE OUT OF STOCK ITEMS)
+    # TAB 1: SALES TRANSACTIONS (FORCED NUMERIC FILTER)
     # ==========================================
     with tab1:
         st.subheader("🛒 Register New Point-of-Sale Transaction")
@@ -134,23 +134,28 @@ else:
             if inventory_df.empty:
                 st.info("No items available in inventory to sell.")
             else:
-                # 1. Generate descriptive display labels for ALL items in memory
-                inventory_df["Display_Label"] = inventory_df["Brand"] + " - " + inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
+                # 💡 STEP 1: Aggressively clean up any lingering text artifacts inside the local stock metrics column
+                inventory_df["Stock_Count"] = pd.to_numeric(inventory_df["Stock_Count"], errors='coerce').fillna(0.0).astype(float)
+                inventory_df["Bag_Weight_KG"] = pd.to_numeric(inventory_df["Bag_Weight_KG"], errors='coerce').fillna(0).astype(int)
+                inventory_df["Retail_Price"] = pd.to_numeric(inventory_df["Retail_Price"], errors='coerce').fillna(0.0).astype(float)
+
+                # Generate descriptive labels for reference matching
+                inventory_df["Display_Label"] = inventory_df["Brand"].astype(str) + " - " + inventory_df["Rice_Variety"].astype(str) + " (" + inventory_df["SKU"].astype(str) + ") [" + inventory_df["Packaging"].astype(str) + "]"
                 
-                # 💡 FIX: Filter out any items where the stock count has hit 0 or lower before building the options list
-                available_items_df = inventory_df[inventory_df["Stock_Count"] > 0]
+                # 💡 STEP 2: Strict numeric greater-than-zero verification mask filters
+                available_items_df = inventory_df[inventory_df["Stock_Count"] > 0.0].copy()
                 
                 if available_items_df.empty:
                     st.warning("⚠️ Out of Stock: There are currently zero units available in the warehouse registry.")
                 else:
-                    # Provide the selectbox only with items that are currently in stock
+                    # Render the selectbox populated exclusively with items featuring verifiable active numeric stock
                     product_selection = st.selectbox("Select Master Rice Inventory Item", options=available_items_df["Display_Label"].unique())
                     
-                    # Extract single row mapping indices using the filtered dataset
+                    # Extract single row mapping indices using the filtered slice dataset
                     selected_idx = available_items_df[available_items_df["Display_Label"] == product_selection].index
                     selected_row = available_items_df.loc[selected_idx].squeeze()
                     
-                    # Handle metrics attributes parsing safely
+                    # Safely handle metrics parsing
                     current_stock_sacks = float(selected_row["Stock_Count"])
                     sack_weight_kg = float(selected_row["Bag_Weight_KG"])
                     retail_price_per_sack = float(selected_row["Retail_Price"])
@@ -166,7 +171,7 @@ else:
                     st.caption(f"💡 Current Live Stock Level: **{current_stock_sacks:,.2f}** {target_packaging}(s) remaining (Total available volume: **{total_available_kg:,.1f} kg**)")
                     st.divider()
                     
-                    # STEP 1: USER CHOOSE SALES OPERATION TYPE
+                    # CHOOSE SALES OPERATION TYPE
                     sale_type = st.radio(
                         "Select Operational Transaction Type",
                         options=["Sell Whole Unit / Sack", "Repack into Smaller Bags (1kg - Custom)"],
@@ -196,8 +201,7 @@ else:
                                 min_value=1, 
                                 max_value=max_repack_weight, 
                                 value=1, 
-                                step=1,
-                                help=f"Based on this SKU's configuration ({sack_weight_kg:g}kg), you can enter any repack weight up to {max_repack_weight}kg."
+                                step=1
                             )
                         with col_input_2:
                             # Restrict repack limits dynamically to the exact fractional weight left over in warehouse
@@ -214,7 +218,7 @@ else:
                         transaction_variety_label = f"{target_variety} (Repacked {repack_weight_per_bag}kg)"
                         transaction_packaging_label = "Small Bag"
                     
-                    # 🖥️ Live Transaction Summary Preview
+                    # Live Transaction Summary Preview
                     st.info(f"💵 **Transaction Preview:** Total Weight Moving: `{total_weight_sold_kg:,.1f} kg` | **Total Combined Price Due: ₱{total_sale_amount:,.2f}**")
                     
                     # Global Action button
@@ -253,6 +257,7 @@ else:
                                 
                                 st.success(f"🎉 Success! Dispatched transaction seamlessly. Deducted **{sacks_to_deduct:.2f}** {target_packaging.lower()}(s) from `{target_brand}` stock.")
                                 st.rerun()
+
 
     
     # ==========================================
