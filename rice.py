@@ -21,7 +21,7 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     # 💡 PASS your new spreadsheet URL directly into the read function here:
-    target_url = "https://google.com"
+    target_url = "https://docs.google.com/spreadsheets/d/1pY_t90mBbeZ6ujZnw-fO9MhnM0f8QfqURDYEUDr1y4Q/edit?gid=0#gid=0"
     master_df = conn.read(spreadsheet=target_url, worksheet="Rice_Inventory", ttl=0)
     
     # Assert expected columns
