@@ -14,45 +14,41 @@ st.title("🌾 Rice Inventory & Price Control Hub")
 st.markdown("Monitor stock levels, calculate total valuation, and override item constraints smoothly.")
 st.divider()
 
-# --- 2. CONNECT TO GOOGLE SHEETS PIPELINE ---
+# --- 2. DEEP CONNECTION TESTING PIPELINE ---
 try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
+    # Diagnostic Check 1: Ensure secrets exist in your file system
+    if "connections" not in st.secrets or "rice_sheets" not in st.secrets["connections"]:
+        st.error("❌ Configuration Error: Could not find the `[connections.rice_sheets]` section inside your `.streamlit/secrets.toml` file.")
+        st.info("💡 Open your `.streamlit/secrets.toml` file and verify that the block starts exactly with `[connections.rice_sheets]`.")
+        st.stop()
+        
+    # Attempt connecting with the sheets configuration block
+    conn = st.connection("rice_sheets", type=GSheetsConnection)
     
-    # 💡 DYNAMIC TAB DETECTION
-    # We read the first tab by default to avoid crashing, then check for a match
-    master_df = conn.read(ttl=0)
+    # Read the designated worksheet tab from the cloud workbook
+    master_df = conn.read(worksheet="Rice_Inventory", ttl=0)
     
-    # If your tab is named differently, let's try to fetch it explicitly
-    try:
-        master_df = conn.read(worksheet="Rice_Inventory", ttl=0)
-    except Exception:
-        # Fallback: Let's try it with a space instead of an underscore
-        try:
-            master_df = conn.read(worksheet="Rice Inventory", ttl=0)
-        except Exception:
-            st.error("❌ Could not find a worksheet tab named 'Rice_Inventory' or 'Rice Inventory' in your file.")
-            st.info("💡 Please create a tab in your Google Sheet named `Rice_Inventory` with columns: SKU, Rice_Variety, Bag_Weight_KG, Stock_Count, Cost_Price, Retail_Price, Last_Updated")
-            st.stop()
-
-    # Target Column Validation Check
+    # Assert expected data frame parameters are valid
     required_cols = ["SKU", "Rice_Variety", "Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price", "Last_Updated"]
     missing_cols = [col for col in required_cols if col not in master_df.columns]
     
     if missing_cols:
-        st.error(f"❌ Missing required columns in your sheet: {missing_cols}")
-        st.info(f"📋 Live columns currently found in your sheet: {list(master_df.columns)}")
+        st.error(f"❌ Missing expected columns in your sheet: {missing_cols}")
+        st.info(f"📋 Columns currently found in your sheet: {list(master_df.columns)}")
         st.stop()
         
-    # Assert and clean up datatype properties for computing mathematics safely
+    # Clean up datatypes for safety
     numeric_cols = ["Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price"]
     for col in numeric_cols:
         master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
         
-except Exception as e:
-    st.error(f"❌ Connection pipeline failure: {e}")
+except Exception as connection_error:
+    st.error("❌ High-Level Pipeline Failure!")
+    st.write("### 🔍 Technical Debug Details:")
+    st.exception(connection_error)  # This outputs the true, unredacted reason for the failure
     st.stop()
 
-# --- 3. HIGH-UTILITY EXECUTIVE METRICS ---
+# --- 3. EXECUTIVE METRICS DASHBOARD ---
 total_bags = int(master_df["Stock_Count"].sum())
 total_weight_tons = (master_df["Stock_Count"] * master_df["Bag_Weight_KG"]).sum() / 1000
 total_asset_value = (master_df["Stock_Count"] * master_df["Cost_Price"]).sum()
@@ -70,14 +66,13 @@ with col4:
 
 st.divider()
 
-# --- 4. DATA MANAGEMENT & LIVE ENTRY TERMINAL ---
-left_pane, right_pane = st.columns([3, 1])
+# --- 4. DATA MANAGEMENT ENGINE ---
+left_pane, right_pane = st.columns()
 
 with left_pane:
     st.subheader("📋 Master Stock Manifest")
     st.markdown('<span style="color: white; font-size: 0.85rem;">✏️ Directly edit cells below to adjust stock counts or alter prices. New rows will auto-timestamp.</span>', unsafe_allow_html=True)
     
-    # Render interactive spreadsheet grid
     edited_df = st.data_editor(
         master_df, 
         num_rows="dynamic", 
@@ -93,13 +88,10 @@ with left_pane:
         }
     )
     
-    # Save Action Control
     if st.button("Save & Sync Stock Changes", type="primary"):
         with st.spinner("Writing transactions securely to cloud registry..."):
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
             edited_df["Last_Updated"] = current_time
-            
-            # Commit the updated matrix upstream
             conn.update(data=edited_df, worksheet="Rice_Inventory")
             st.success("🎉 Inventory dashboard synchronized perfectly with cloud storage!")
             st.rerun()
@@ -113,4 +105,4 @@ with right_pane:
         for _, row in low_stock_df.iterrows():
             st.error(f"**{row['Rice_Variety']} ({row['SKU']})**\n\nOnly **{int(row['Stock_Count'])}** bags left!")
     else:
-        st.success("✅ All stock volumes sit comfortably above baseline thresholds.")
+        st.success("✅ All stock volumes sit comfortably above threshold values.")
