@@ -107,7 +107,7 @@ else:
         inventory_df["Last_Updated"] = inventory_df["Last_Updated"].fillna("").astype(str).str.strip()
         
         inventory_df["Bag_Weight_KG"] = pd.to_numeric(inventory_df["Bag_Weight_KG"], errors='coerce').fillna(0).astype(int)
-        inventory_df["Stock_Count"] = pd.to_numeric(inventory_df["Stock_Count"], errors='coerce').fillna(0).astype(int)
+        inventory_df["Stock_Count"] = pd.to_numeric(inventory_df["Stock_Count"], errors='coerce').fillna(0).astype(float)
         inventory_df["Cost_Price"] = pd.to_numeric(inventory_df["Cost_Price"], errors='coerce').fillna(0.0).astype(float)
         inventory_df["Retail_Price"] = pd.to_numeric(inventory_df["Retail_Price"], errors='coerce').fillna(0.0).astype(float)
         
@@ -121,80 +121,105 @@ else:
         st.error(f"❌ Database load failure. Verify spreadsheet tabs and column names. Details: {e}")
         st.stop()
 
-        # ==========================================
-    # TAB 1: SALES TRANSACTIONS (WITH BRAND FIELD)
+       # ==========================================
+    # TAB 1: SALES TRANSACTIONS (REPACKAGING WEIGHT LOGIC)
     # ==========================================
     with tab1:
         st.subheader("🛒 Register New Point-of-Sale Transaction")
         
         if is_read_only:
-            st.error("⚠️ Read-Only Restriction: Your account profile is blocked from filing new cash transactions.")
+            st.error("⚠️ Read-Only Restriction: Your account profile is blocked from filing new transactions.")
         else:
             if inventory_df.empty:
                 st.info("No items available in inventory to sell.")
             else:
                 with st.form("pos_sale_entry_form", clear_on_submit=True):
-                    # 💡 DISPLAY LABEL UPGRADE: Now reads e.g., "Dona Maria - Jasmine (RICE-JAS-01) [Sack]"
+                    # Combine labels but strictly target the WHOLESALE master item rows (e.g., 25kg Sacks)
                     inventory_df["Display_Label"] = inventory_df["Brand"] + " - " + inventory_df["Rice_Variety"] + " (" + inventory_df["SKU"] + ") [" + inventory_df["Packaging"] + "]"
-                    product_selection = st.selectbox("Select Rice Item to Sell", options=inventory_df["Display_Label"].unique())
+                    product_selection = st.selectbox("Select Master Rice Inventory Item", options=inventory_df["Display_Label"].unique())
+                    
                     # Extract the true targeted matching entry row parameters
                     selected_idx = inventory_df[inventory_df["Display_Label"] == product_selection].index
-                    
-                    # 💡 FIX: Access the row data directly using the index array, or add .iloc[0]
                     selected_row = inventory_df.loc[selected_idx].iloc[0]
                     
-                    current_stock = int(selected_row["Stock_Count"])
-                    retail_price = float(selected_row["Retail_Price"])
+                    current_stock_sacks = float(selected_row["Stock_Count"])
+                    sack_weight_kg = float(selected_row["Bag_Weight_KG"])
+                    retail_price_per_bag = float(selected_row["Retail_Price"])  # Original base price
                     target_sku = selected_row["SKU"]
                     target_brand = selected_row["Brand"]
                     target_variety = selected_row["Rice_Variety"]
-                    target_packaging = str(selected_row["Packaging"]).strip()
                     
-                    st.caption(f"💡 Current Live Stock Level: **{current_stock}** {target_packaging.lower()}(s) left | Unit Retail Price: **₱{retail_price:,.2f}**")
+                    # Calculate total available kilograms remaining in that specific wholesale stack
+                    total_available_kg = current_stock_sacks * sack_weight_kg
                     
-                    qty_to_sell = st.number_input(
-                        f"Quantity of {target_packaging}s Sold", 
-                        min_value=1, 
-                        max_value=int(current_stock) if current_stock > 0 else 1, 
-                        step=1
-                    )
+                    st.caption(f"💡 Current Live Stock Level: **{current_stock_sacks:,.2f}** Sacks remaining (Total available volume: **{total_available_kg:,.1f} kg**)")
+                    st.divider()
+                    
+                    # 💡 REPACKAGING LAYOUT OPTION CONTROLS
+                    col_unit, col_qty = st.columns(2)
+                    with col_unit:
+                        retail_size_kg = st.selectbox(
+                            "Select Retail Package Size Sold", 
+                            options=[2, 3], 
+                            format_func=lambda x: f"{x} kg Small Bag"
+                        )
+                    with col_qty:
+                        qty_repacked_bags_sold = st.number_input(
+                            f"Quantity of {retail_size_kg}kg Bags Sold", 
+                            min_value=1, 
+                            step=1
+                        )
+                    
+                    # 💡 MATHEMATICAL LOGIC: 
+                    # 1. Compute total weight sold in kilograms
+                    total_weight_sold_kg = float(retail_size_kg * qty_repacked_bags_sold)
+                    
+                    # 2. Convert total weight sold back into fractions of a wholesale sack
+                    # Example: Selling five 3kg bags = 15kg. If master sack is 25kg, sacks_to_deduct = 15 / 25 = 0.60 sacks
+                    sacks_to_deduct = total_weight_sold_kg / sack_weight_kg
+                    
+                    # 3. Dynamic Retail Pricing Rule: Base it proportionally on weight, or customize it
+                    # Example: If a 25kg sack retails at ₱1,250, a 3kg bag automatically calculates as (3 / 25) * 1250 = ₱150
+                    calculated_price_per_bag = (retail_size_kg / sack_weight_kg) * retail_price_per_bag
+                    total_sale_amount = qty_repacked_bags_sold * calculated_price_per_bag
+                    
+                    st.info(f"💵 **Transaction Preview:** Total Weight Sold: `{total_weight_sold_kg} kg` | Price per bag: `₱{calculated_price_per_bag:,.2f}` | **Total Amount due: ₱{total_sale_amount:,.2f}**")
                     
                     submit_sale = st.form_submit_button("Log Transaction", type="primary")
                     
                     if submit_sale:
-                        if current_stock < qty_to_sell:
-                            st.error(f"❌ Out of stock! Transaction blocked due to insufficient {target_packaging.lower()} quantities.")
+                        if total_available_kg < total_weight_sold_kg:
+                            st.error(f"❌ Transaction Blocked! Insufficient volume. You are attempting to sell {total_weight_sold_kg}kg but only {total_available_kg}kg remains.")
                         else:
-                            # 1. Map properties array into new sales log line with Brand
+                            # 1. Map transaction data into your sales log sheet
                             new_sale_row = pd.DataFrame([{
                                 "Transaction_ID": str(uuid.uuid4())[:8].upper(),
                                 "Date_Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 "SKU": target_sku,
                                 "Brand": target_brand,
-                                "Rice_Variety": target_variety,
-                                "Packaging": target_packaging,
-                                "Quantity_Bags": int(qty_to_sell),
-                                "Price_Per_Bag": float(retail_price),
-                                "Total_Amount": float(qty_to_sell * retail_price),
+                                "Rice_Variety": f"{target_variety} (Repacked {retail_size_kg}kg)",
+                                "Packaging": "Small Bag",
+                                "Quantity_Bags": int(qty_repacked_bags_sold),
+                                "Price_Per_Bag": float(calculated_price_per_bag),
+                                "Total_Amount": float(total_sale_amount),
                                 "Encoder": active_user
                             }])
                             
-                            # 2. Subtract sold stock straight out of live manifest dataframe
-                            inventory_df.loc[selected_idx, "Stock_Count"] = current_stock - qty_to_sell
+                            # 2. SURGICAL DEDUCTION: Subtract the precise decimal fraction of the sack from your inventory dataframe
+                            inventory_df.loc[selected_idx, "Stock_Count"] = current_stock_sacks - sacks_to_deduct
                             inventory_df["Last_Updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                             
-                            # Cleanup display formatting helpers before pushing up to server
+                            # Cleanup layout helpers before pushing updates back online
                             inventory_df = inventory_df.drop(columns=["Display_Label"])
                             
-                            # 3. Commit data updates back upstream concurrently
+                            # 3. Save updates concurrently across worksheets
                             updated_sales_df = pd.concat([sales_df, new_sale_row], ignore_index=True)
                             
                             conn.update(data=updated_sales_df, worksheet="Sales_Transactions")
                             conn.update(data=inventory_df, worksheet="Rice_Inventory")
                             
-                            st.success(f"🎉 Sale successfully logged! Subtracted **{qty_to_sell}** {target_packaging.lower()}(s) from {target_brand} {target_variety} inventory.")
+                            st.success(f"🎉 Success! Sold **{qty_repacked_bags_sold}** bags of {retail_size_kg}kg. Deducted **{sacks_to_deduct:.2f}** Sacks from the `{target_brand}` wholesale inventory.")
                             st.rerun()
-
 
 
     # ==========================================
@@ -274,7 +299,7 @@ else:
                     "Rice_Variety": st.column_config.SelectboxColumn("Rice Variety", options=dropdown_choices, required=True, disabled=("Rice_Variety" in disabled_columns)),
                     "Packaging": st.column_config.SelectboxColumn("Packaging", options=["Bag", "Sack"], required=True, disabled=("Packaging" in disabled_columns)),
                     "Bag_Weight_KG": st.column_config.NumberColumn("Weight (KG)", min_value=1, format="%d kg", disabled=("Bag_Weight_KG" in disabled_columns)),
-                    "Stock_Count": st.column_config.NumberColumn("Stock Quantity", min_value=0, format="%d", disabled=("Stock_Count" in disabled_columns)),
+                    "Stock_Count": st.column_config.NumberColumn("Stock Quantity", min_value=0.0, format="%.2f", disabled=("Stock_Count" in disabled_columns)),
                     "Cost_Price": st.column_config.NumberColumn("Cost per Unit", min_value=0.0, format="₱%.2f", disabled=("Cost_Price" in disabled_columns)),
                     "Retail_Price": st.column_config.NumberColumn("Retail per Unit", min_value=0.0, format="₱%.2f", disabled=("Retail_Price" in disabled_columns)),
                     "Last_Updated": st.column_config.TextColumn("Last Modified", disabled=True)
