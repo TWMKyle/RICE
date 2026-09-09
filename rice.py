@@ -30,6 +30,12 @@ try:
                 .str.replace(",", "", regex=False)
                 .str.strip()
             )
+    
+    # Standardize data types to fix the Streamlit type compatibility exception
+    master_df["Bag_Weight_KG"] = pd.to_numeric(master_df["Bag_Weight_KG"], errors='coerce').fillna(0).astype(int)
+    master_df["Stock_Count"] = pd.to_numeric(master_df["Stock_Count"], errors='coerce').fillna(0).astype(int)
+    master_df["Cost_Price"] = pd.to_numeric(master_df["Cost_Price"], errors='coerce').fillna(0.0).astype(float)
+    master_df["Retail_Price"] = pd.to_numeric(master_df["Retail_Price"], errors='coerce').fillna(0.0).astype(float)
 
 
     # Assert and clean up datatype properties for computing mathematics safely
