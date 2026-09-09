@@ -25,11 +25,16 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     users_df = conn.read(spreadsheet=RICE_SHEET_URL, worksheet="Users", ttl=0)
     
+    # 💡 FIX: Clean and standardize the column headers themselves to get rid of hidden spaces/caps!
+    users_df.columns = [str(col).strip().lower() for col in users_df.columns]
+    
+    # Verify the cleaned headers match what we expect
     for col in ["uz", "pc", "auth"]:
         if col in users_df.columns:
             users_df[col] = users_df[col].astype(str).str.strip()
         else:
-            st.error(f"❌ Structural database error. Missing column `{col}` from your Users worksheet. Found headers: {list(users_df.columns)}")
+            st.error(f"❌ Structural database error. Missing column `{col}` from your Users worksheet.")
+            st.info(f"📋 What the code actually sees in your sheet row 1: {list(users_df.columns)}")
             st.stop()
         
     USER_CREDENTIALS = dict(zip(users_df["uz"].str.upper(), users_df["pc"]))
