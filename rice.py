@@ -17,20 +17,42 @@ st.divider()
 # --- 2. CONNECT TO GOOGLE SHEETS PIPELINE ---
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # Fetch live spreadsheet matrix (ttl=0 avoids stale storage cache reads)
-    master_df = conn.read(worksheet="Rice_Inventory", ttl=0)
     
+    # 💡 DYNAMIC TAB DETECTION
+    # We read the first tab by default to avoid crashing, then check for a match
+    master_df = conn.read(ttl=0)
+    
+    # If your tab is named differently, let's try to fetch it explicitly
+    try:
+        master_df = conn.read(worksheet="Rice_Inventory", ttl=0)
+    except Exception:
+        # Fallback: Let's try it with a space instead of an underscore
+        try:
+            master_df = conn.read(worksheet="Rice Inventory", ttl=0)
+        except Exception:
+            st.error("❌ Could not find a worksheet tab named 'Rice_Inventory' or 'Rice Inventory' in your file.")
+            st.info("💡 Please create a tab in your Google Sheet named `Rice_Inventory` with columns: SKU, Rice_Variety, Bag_Weight_KG, Stock_Count, Cost_Price, Retail_Price, Last_Updated")
+            st.stop()
+
+    # Target Column Validation Check
+    required_cols = ["SKU", "Rice_Variety", "Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price", "Last_Updated"]
+    missing_cols = [col for col in required_cols if col not in master_df.columns]
+    
+    if missing_cols:
+        st.error(f"❌ Missing required columns in your sheet: {missing_cols}")
+        st.info(f"📋 Live columns currently found in your sheet: {list(master_df.columns)}")
+        st.stop()
+        
     # Assert and clean up datatype properties for computing mathematics safely
     numeric_cols = ["Bag_Weight_KG", "Stock_Count", "Cost_Price", "Retail_Price"]
     for col in numeric_cols:
         master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
         
 except Exception as e:
-    st.error(f"❌ Google Sheets Connection failed. Ensure the 'Rice_Inventory' tab exists with the correct columns. Trace: {e}")
+    st.error(f"❌ Connection pipeline failure: {e}")
     st.stop()
 
 # --- 3. HIGH-UTILITY EXECUTIVE METRICS ---
-# Execute live inventory logic sums based on current spreadsheet snapshot
 total_bags = int(master_df["Stock_Count"].sum())
 total_weight_tons = (master_df["Stock_Count"] * master_df["Bag_Weight_KG"]).sum() / 1000
 total_asset_value = (master_df["Stock_Count"] * master_df["Cost_Price"]).sum()
@@ -74,7 +96,6 @@ with left_pane:
     # Save Action Control
     if st.button("Save & Sync Stock Changes", type="primary"):
         with st.spinner("Writing transactions securely to cloud registry..."):
-            # Update modification timestamps for rows that changed
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
             edited_df["Last_Updated"] = current_time
             
@@ -85,12 +106,11 @@ with left_pane:
 
 with right_pane:
     st.subheader("⚠️ Low Stock Alerts")
-    # Dynamically extract items below threshold buffer (e.g., fewer than 10 bags left)
     low_stock_threshold = 10
     low_stock_df = master_df[master_df["Stock_Count"] <= low_stock_threshold]
     
     if not low_stock_df.empty:
         for _, row in low_stock_df.iterrows():
-            st.error(f"**{row['Rice_Variety']} ({row['SKU']})**\n\nOnly **{int(row['Stock_Count'])}** bags remaining!")
+            st.error(f"**{row['Rice_Variety']} ({row['SKU']})**\n\nOnly **{int(row['Stock_Count'])}** bags left!")
     else:
         st.success("✅ All stock volumes sit comfortably above baseline thresholds.")
