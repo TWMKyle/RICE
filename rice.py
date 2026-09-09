@@ -148,7 +148,7 @@ else:
                     target_sku = selected_row["SKU"]
                     target_brand = selected_row["Brand"]
                     target_variety = selected_row["Rice_Variety"]
-                    target_packaging = str(selected_row["Packaging"]).strip(
+                    target_packaging = str(selected_row["Packaging"]).strip()
                     
                     st.caption(f"💡 Current Live Stock Level: **{current_stock}** {target_packaging.lower()}(s) left | Unit Retail Price: **₱{retail_price:,.2f}**")
                     
